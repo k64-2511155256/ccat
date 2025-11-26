@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cashcat - Mèo Thủ Quỹ</title>
+    <!-- Tải Tailwind CSS để đảm bảo phong cách hiện đại và dễ dàng tùy chỉnh -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        /* Thiết lập font Inter cho toàn bộ ứng dụng */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Màu nền nhẹ nhàng */
+        }
+        /* Màu chủ đạo: Nền Cashcat Light (#FEEBCB) và Text/Accent Cashcat Dark (#795548) */
+        .cashcat-light {
+            background-color: #FEEBCB; 
+        }
+        .cashcat-dark {
+            color: #795548; /* Màu nâu đất cho chữ */
+        }
+        .btn-primary {
+            background-color: #795548;
+            transition: background-color 0.2s;
+        }
+        .btn-primary:hover {
+            background-color: #5D4037; /* Màu đậm hơn khi hover */
+        }
+        /* Tiêu đề in hoa và tô đậm */
+        .title-text {
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+        /* Khu vực chat ẩn thanh cuộn */
+        .chat-area {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .chat-area::-webkit-scrollbar {
+            display: none;
+        }
+        /* Giao diện tin nhắn của Cashcat */
+        .cashcat-bubble {
+            background-color: #FEEBCB;
+            border: 1px solid #79554830;
+        }
+        /* Tin nhắn của người dùng */
+        .user-bubble {
+            background-color: #795548;
+        }
+        /* Style cho Emoji/Text Icon */
+        .cashcat-icon {
+            font-size: 3rem; /* Làm emoji to lên */
+            line-height: 1; /* Căn giữa dọc */
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <!-- KHUNG CHATBOX CHÍNH -->
+    <div id="cashcatChat" class="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col h-[80vh] min-h-[500px]">
+
+        <!-- HEADER -->
+        <header class="cashcat-light p-4 shadow-md flex items-center justify-center space-x-3 border-b-4 border-[#795548]">
+            
+            <!-- THAY THẾ IMAGE BẰNG EMOJI VÀ TEXT VÌ LÝ DO BẢO MẬT (GUARANTEED TO RENDER) -->
+            <div class="flex items-center justify-center w-12 h-12">
+                <span class="cashcat-icon">🐱</span>
+            </div>
+            
+            <!-- ĐÃ LOẠI BỎ BIỂU TƯỢNG TIỀN THEO YÊU CẦU -->
+            <h1 class="text-2xl title-text cashcat-dark text-center">
+                CASHCAT
+            </h1>
+        </header>
+
+        <!-- KHU VỰC CHAT -->
+        <main id="chatArea" class="chat-area flex-grow p-4 space-y-4 overflow-y-auto bg-white">
+            <!-- Nội dung chat sẽ được render tại đây -->
+        </main>
+
+        <!-- FOOTER / KHU VỰC NHẬP LIỆU (Tùy theo trạng thái) -->
+        <footer id="inputArea" class="p-4 border-t border-gray-100 bg-gray-50">
+            <!-- Nút bấm/Input sẽ được render tại đây -->
+        </footer>
+
+        <!-- Modal hiển thị kết quả (thay thế alert) -->
+        <div id="resultModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+            <div class="bg-white rounded-xl p-6 shadow-xl w-11/12 max-w-md">
+                <h3 id="modalTitle" class="text-2xl font-bold mb-4 text-center cashcat-dark">KẾT LUẬN CỦA CASHCAT</h3>
+                <p id="modalMessage" class="text-gray-700 text-center mb-6"></p>
+                <div class="flex justify-center">
+                    <button id="modalCloseBtn" class="btn-primary text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:shadow-lg">
+                        Hoàn tất
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- CẤU HÌNH VÀ BIẾN TOÀN CỤC ---
+        let appState = 'intro';
+        let userSelection = {};
+        let quizScore = 0;
+        let quizMode = ''; 
+        let currentQuizIndex = 0;
+        let chatHistory = []; // Lịch sử tin nhắn để kiểm soát việc redraw
+
+        // URL API Google Apps Script của bạn
+        // LƯU Ý: Thay thế URL này bằng URL Apps Script đã triển khai của bạn
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbywKmrRpXC_NAHIugdMeUBS-2htWkVGUvsMqOaTNvKet_b5gdt0S8dupJeelpfoVqf0/exec'; 
+
+        // --- DỮ LIỆU CÂU HỎI VÀ ĐIỂM SỐ ---
+
+        // Mapping điểm cho từng loại chi tiêu (Buying Quiz)
+        const QUIZ_BUYING_DATA = [
+            // Q1. Importance
+            { q: "Món đồ này phục vụ mục đích gì?", opts: [
+                { text: "Nhu cầu sinh tồn / thiết yếu", scores: { tight: 3, save: 3, comfort: 3 } },
+                { text: "Học tập / công việc (thiết yếu)", scores: { tight: 2, save: 2, comfort: 2 } },
+                { text: "Tiện nghi / giải trí", scores: { tight: 0, save: -1, comfort: -1 } },
+                { text: "Sở thích / xu hướng / cảm tính", scores: { tight: -2, save: -2, comfort: -2 } }
+            ]},
+            // Q2. Urgency
+            { q: "Bạn có cần nó ngay bây giờ không?", opts: [
+                { text: "Cần ngay, ảnh hưởng việc học/sức khỏe", scores: { tight: 3, save: 2, comfort: 3 } },
+                { text: "Có thể chờ vài ngày", scores: { tight: 1, save: 1, comfort: 1 } },
+                { text: "Không gấp", scores: { tight: 0, save: 0, comfort: 0 } },
+                { text: "Mua vì sale / FOMO / sợ hết hàng", scores: { tight: -3, save: -3, comfort: -2 } }
+            ]},
+            // Q3. Affordability
+            { q: "Sau khi mua, số tiền còn lại có đủ cho nhu cầu cơ bản tuần/tháng không?", opts: [
+                { text: "Dư rõ rệt (vẫn an toàn)", scores: { tight: 2, save: 3, comfort: 3 } },
+                { text: "Dư đủ thoải mái", scores: { tight: null, save: null, comfort: 2 } }, // Chỉ có trong Comfort
+                { text: "Vừa đủ (nhưng không ảnh hưởng cơ bản)", scores: { tight: 0, save: 0, comfort: 1 } },
+                { text: "Rất chật vật", scores: { tight: -2, save: -2, comfort: -2 } },
+                { text: "Không đủ", scores: { tight: -3, save: -3, comfort: -3 } }
+            ]},
+            // Q4. Opportunity Cost
+            { q: "Nếu bạn mua món này, bạn sẽ phải bỏ qua điều gì?", opts: [
+                { text: "Không bỏ qua gì quan trọng", scores: { tight: 2, save: 2, comfort: 3 } },
+                { text: "Một khoản chi nhỏ khác", scores: { tight: 0, save: 0, comfort: 1 } },
+                { text: "Tiền tiết kiệm hoặc mục tiêu lớn", scores: { tight: -3, save: -3, comfort: -3 } }
+            ]},
+            // Q5. Emotional Trigger
+            { q: "Quyết định mua của bạn xuất phát từ điều gì?", opts: [
+                { text: "Nhu cầu thực sự", scores: { tight: 3, save: 2, comfort: 3 } },
+                { text: "Một phần cảm xúc", scores: { tight: -1, save: -1, comfort: 0 } },
+                { text: "Chủ yếu cảm xúc (buồn, chán, stress, FOMO, peer pressure)", scores: { tight: -3, save: -3, comfort: -3 } }
+            ]},
+            // Q6. Frequency
+            { q: "Trong tháng, bạn đã mua thứ tương tự bao nhiêu lần?", opts: [
+                { text: "0 lần", scores: { tight: 2, save: 2, comfort: 3 } },
+                { text: "1–2 lần", scores: { tight: 0, save: 0, comfort: 2 } },
+                { text: "3–4 lần", scores: { tight: -2, save: -1, comfort: -1 } },
+                { text: "4 lần (hoặc nhiều hơn 4 lần)", scores: { tight: -3, save: -2, comfort: -3 } }
+            ]},
+            // Q7. Longevity & Usefulness
+            { q: "Bạn sẽ dùng món đồ này trong bao lâu?", opts: [
+                { text: "Trên 6 tháng", scores: { tight: 3, save: 2, comfort: 3 } },
+                { text: "Vài tuần đến vài tháng", scores: { tight: 1, save: 1, comfort: 1 } },
+                { text: "1–2 lần hoặc vài ngày", scores: { tight: -3, save: -3, comfort: -3 } }
+            ]},
+            // Q8. Alternatives
+            { q: "Có lựa chọn rẻ hơn hoặc miễn phí không?", opts: [
+                { text: "Không có", scores: { tight: 2, save: 2, comfort: 3 } },
+                { text: "Có nhưng không tiện", scores: { tight: 0, save: 0, comfort: 1 } },
+                { text: "Có lựa chọn tương đương rẻ hơn", scores: { tight: -1, save: -1, comfort: -1 } },
+                { text: "Có bản miễn phí / mượn được", scores: { tight: -3, save: -3, comfort: -3 } },
+                { text: "Chưa tìm hiểu", scores: { tight: -2, save: -1, comfort: -1 } }
+            ]},
+            // Q9. Regret Prediction
+            { q: "Trải nghiệm trước đây với món tương tự?", opts: [
+                { text: "Hài lòng", scores: { tight: 2, save: 2, comfort: 3 } },
+                { text: "Bình thường", scores: { tight: 0, save: 0, comfort: 1 } },
+                { text: "Hối hận / lãng phí", scores: { tight: -3, save: -3, comfort: -3 } }
+            ]},
+            // Q10. Long-term Goal Alignment
+            { q: "Món đồ này ảnh hưởng thế nào tới mục tiêu tài chính của bạn?", opts: [
+                { text: "Hỗ trợ trực tiếp mục tiêu", scores: { tight: 3, save: 3, comfort: 3 } },
+                { text: "Không ảnh hưởng", scores: { tight: 0, save: 0, comfort: 1 } },
+                { text: "Ảnh hưởng xấu / kéo bạn xa mục tiêu", scores: { tight: -3, save: -3, comfort: -3 } }
+            ]}
+        ];
+
+        // Scoring for Event Quiz (Universal Score, only threshold changes based on quizMode)
+        const QUIZ_EVENT_DATA = [
+            // Q1. Connection
+            { q: "Tham gia hoạt động này giúp bạn kết nối tốt hơn với ai?", opts: [
+                { text: "Thầy cô, anh chị đi trước (người giúp đỡ bạn trong học tập)", score: 3 },
+                { text: "Bạn bè xã giao, quan hệ bình thường", score: 1 },
+                { text: "Không kết nối thêm ai đặc biệt", score: -1 }
+            ]},
+            // Q2. Relationship Building
+            { q: "Hoạt động này có giúp bạn xây dựng mối quan hệ bạn muốn không?", opts: [
+                { text: "Có, cần thiết cho học tập.", score: 3 },
+                { text: "Có, cần thiết cho việc kết bạn vui chơi.", score: 2 },
+                { text: "Không hẳn, chỉ là duy trì mối quan hệ sẵn có.", score: 1 },
+                { text: "Không chắc, chưa xác định đối tượng cụ thể.", score: 0 }
+            ]},
+            // Q3. FOMO
+            { q: "Nếu bạn không đi, bạn có cảm giác tiếc thật sự không, hay chỉ sợ mọi người đi mà bạn không đi?", opts: [
+                { text: "Rất tiếc, cơ hội duy nhất/ lớn giúp ích việc học.", score: 3 },
+                { text: "Chỉ bị FOMO, sợ bỏ lỡ cái gì đó hay ho có thể xảy ra.", score: -2 },
+                { text: "Không xác định được.", score: 0 }
+            ]},
+            // Q4. Motivation
+            { q: "Bạn có muốn tham gia ngay cả khi không ai rủ?", opts: [
+                { text: "Có, vì mang lại lợi ích cho bản thân.", score: 2 },
+                { text: "Chắc là không đi, đi một mình buồn chán lắm.", score: -2 },
+                { text: "Chưa chắc nữa, điều kiện thuận lợi thì có thể đi.", score: 0 }
+            ]},
+            // Q5. Affordability
+            { q: "Sau khi tham gia, số tiền còn lại của bạn có đủ sống sót qua thời gian còn lại không?", opts: [
+                { text: "Có thể, còn lại trên 50% chi phí sinh hoạt tháng.", score: 1 },
+                { text: "Chắc là không, còn lại dưới 20% chi phí sinh hoạt tháng.", score: -3 },
+                { text: "Cũng có thể, còn lại 20%-50% chi phí sinh hoạt tháng.", score: 0 }
+            ]},
+            // Q6. Stress Relief/Value
+            { q: "Nó có giúp bạn giải tỏa stress hay mang lại giá trị tinh thần không?", opts: [
+                { text: "Có, nó rất thú vị.", score: 2 },
+                { text: "Không, tôi nghĩ nó sẽ chán.", score: -1 },
+                { text: "Chưa tham gia nên cũng chưa biết nữa.", score: 0 }
+            ]},
+            // Q7. Feel Better
+            { q: "Đi có giúp bạn cảm thấy tốt hơn thật không?", opts: [
+                { text: "Có, sự kiện này có mục đích rõ ràng.", score: 2 },
+                { text: "Không chắc lắm, chưa chắc sẽ hiệu quả.", score: 0 }
+            ]},
+            // Q8. Study Impact
+            { q: "Đi xong bạn có bị ảnh hưởng học tập hoặc lịch trình không?", opts: [
+                { text: "Có, bị ảnh hưởng (không kịp làm bài tập, trùng lịch khác)", score: -2 },
+                { text: "Không, không bị ảnh hưởng", score: 1 }
+            ]},
+            // Q9. Long-term Memory
+            { q: "Tham gia hoạt động này có giúp bạn tạo kỷ niệm hay mối quan hệ lâu dài không?", opts: [
+                { text: "Có thể, tạo ra kỉ niệm đẹp với những mối quan hệ mới.", score: 2 },
+                { text: "Không, chỉ là trải nghiệm vui vẻ tạm thời.", score: -1 }
+            ]},
+            // Q10. Alternatives
+            { q: "Có cách nào tham gia với chi phí thấp hơn không?", opts: [
+                { text: "Có, có thể đi chung xe với bạn, không mua thêm quà bánh nước,...", score: 2 },
+                { text: "Không, chi phí đã cố định.", score: -1 }
+            ]}
+        ];
+
+
+        // --- HÀM HỖ TRỢ HIỂN THỊ ---
+        
+        // Hàm vẽ lại toàn bộ lịch sử chat
+        function redrawChatArea() {
+            const chatArea = document.getElementById('chatArea');
+            chatArea.innerHTML = ''; // 1. Xóa nội dung cũ TRƯỚC KHI VẼ LẠI
+
+            chatHistory.forEach(msg => {
+                let contentClass = 'font-normal cashcat-bubble cashcat-dark'; 
+                let contentStyle = 'font-normal';
+                let finalContent = msg.content;
+                let senderName = msg.sender === 'cashcat' ? 'Cashcat' : 'Bạn';
+                let alignClass = msg.sender === 'cashcat' ? 'items-start' : 'items-end';
+                let bubbleClass = msg.sender === 'cashcat' 
+                    ? 'max-w-xs md:max-w-md p-3 rounded-xl rounded-tl-none shadow-md' 
+                    : 'max-w-xs md:max-w-md user-bubble text-white p-3 rounded-xl rounded-tr-none shadow-md';
+                
+                // Logic cho tin nhắn Cashcat
+                if (msg.sender === 'cashcat') {
+                    // Xử lý "meow"
+                    if (msg.isMeow && msg.type !== 'intro_title' && msg.type !== 'intro_message') {
+                         finalContent += " meow~";
+                    }
+                    
+                    if (msg.type === 'question' || msg.type === 'quiz_q') {
+                        contentStyle = 'font-bold';
+                        contentClass = 'cashcat-bubble cashcat-dark';
+                    } else if (msg.type === 'conclusion') {
+                        contentClass = 'cashcat-bubble cashcat-dark font-bold'; // Đảm bảo lời cảm ơn nổi bật
+                    } else {
+                        contentClass = 'cashcat-bubble cashcat-dark'; // Default Cashcat bubble
+                    }
+                }
+                
+                const messageHtml = `
+                    <div class="flex flex-col ${alignClass}">
+                        <div class="text-xs font-semibold mb-1 text-gray-500">${senderName}</div>
+                        <div class="${bubbleClass} ${contentClass}">
+                            <p class="text-sm leading-relaxed ${contentStyle}">${finalContent}</p>
+                        </div>
+                    </div>
+                `;
+                chatArea.insertAdjacentHTML('beforeend', messageHtml);
+            });
+
+            chatArea.scrollTop = chatArea.scrollHeight; // 2. Cuộn xuống cuối
+        }
+
+        // Hàm thêm tin nhắn vào lịch sử và vẽ lại
+        function pushMessage(sender, content, type = 'info', isMeow = true) {
+            // Thêm message vào lịch sử
+            chatHistory.push({ sender, content, type, isMeow });
+            // Vẽ lại toàn bộ khu vực chat
+            redrawChatArea();
+        }
+
+        function renderOptions(options, handler) {
+            const inputArea = document.getElementById('inputArea');
+            inputArea.innerHTML = '';
+            
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'flex flex-col space-y-2';
+            
+            options.forEach(option => {
+                const button = document.createElement('button');
+                button.textContent = option.text;
+                button.className = 'w-full btn-primary text-white font-normal py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition ease-in-out duration-150';
+                button.onclick = () => handler(option.value, option.text);
+                buttonContainer.appendChild(button);
+            });
+            inputArea.appendChild(buttonContainer);
+        }
+
+        function renderEmailInput() {
+            const inputArea = document.getElementById('inputArea');
+            inputArea.innerHTML = `
+                <div id="emailMessage" class="cashcat-dark mb-3 font-semibold text-center">Hãy nhập email của bạn vào đây</div>
+                <input type="email" id="emailInput" placeholder="Nhập email của bạn..." class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#795548] mb-2">
+                <button id="emailSubmitBtn" class="w-full btn-primary text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition ease-in-out duration-150">
+                    Gửi cho Cashcat
+                </button>
+            `;
+            document.getElementById('emailSubmitBtn').onclick = submitEmail;
+        }
+
+        function showResultModal(title, message) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalMessage').innerHTML = message;
+            document.getElementById('resultModal').classList.remove('hidden');
+            document.getElementById('resultModal').classList.add('flex');
+            document.getElementById('modalCloseBtn').onclick = () => {
+                document.getElementById('resultModal').classList.remove('flex');
+                document.getElementById('resultModal').classList.add('hidden');
+                // CHUYỂN SANG HỎI XEM CÓ MUỐN BẮT ĐẦU LẠI KHÔNG
+                appState = 'ask_restart';
+                renderChatbox();
+            };
+        }
+
+        function resetChat() {
+            appState = 'intro';
+            userSelection = {};
+            quizScore = 0;
+            quizMode = '';
+            currentQuizIndex = 0;
+            chatHistory = []; // Xóa lịch sử chat
+            document.getElementById('chatArea').innerHTML = ''; 
+            renderChatbox();
+        }
+
+
+        // --- LOGIC XỬ LÝ LƯU EMAIL (DÙNG API GAS) ---
+        // Sử dụng logic backoff để đảm bảo độ ổn định khi gọi API
+        async function submitEmail() {
+            const emailInput = document.getElementById('emailInput');
+            const email = emailInput.value.trim();
+            const submitBtn = document.getElementById('emailSubmitBtn');
+            const messageElement = document.getElementById('emailMessage');
+            
+            if (!email || !email.includes('@')) {
+                messageElement.textContent = "Vui lòng nhập một email hợp lệ!";
+                messageElement.classList.add('text-red-500');
+                return;
+            }
+
+            submitBtn.textContent = 'Đang gửi...';
+            submitBtn.disabled = true;
+            messageElement.classList.remove('text-red-500');
+            messageElement.textContent = "Đang kết nối...";
+
+
+            const payload = {
+                email: email,
+                style: userSelection.style || 'default', 
+                timestamp: new Date().toISOString()
+            };
+
+            const maxRetries = 3;
+            let currentRetry = 0;
+
+            const makeApiCall = async () => {
+                try {
+                    const response = await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'cors', 
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    
+                    if (result.status === 'success') {
+                        messageElement.textContent = "Cashcat đã lưu lại email và phong cách bạn chọn! meow~";
+                        appState = 'ask_restart';
+                        renderChatbox();
+                        return true; // Thành công
+                    } else {
+                        throw new Error('API returned failure status');
+                    }
+                } catch (error) {
+                    console.error('Lỗi khi gọi API:', error);
+                    throw error; // Ném lỗi để kích hoạt retry
+                }
+            };
+
+            while (currentRetry < maxRetries) {
+                try {
+                    const success = await makeApiCall();
+                    if (success) return;
+                } catch (error) {
+                    currentRetry++;
+                    if (currentRetry < maxRetries) {
+                        const delay = Math.pow(2, currentRetry) * 1000; // Exponential backoff: 2s, 4s
+                        messageElement.textContent = `Thử lại lần ${currentRetry} sau ${delay / 1000} giây...`;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+            }
+
+            // Nếu thất bại sau tất cả các lần thử
+            messageElement.textContent = "Lỗi khi lưu trữ email. Vui lòng kiểm tra API URL và triển khai GAS.";
+            messageElement.classList.add('text-red-500');
+            submitBtn.textContent = 'Gửi cho Cashcat';
+            submitBtn.disabled = false;
+        }
+
+
+        // --- LOGIC XỬ LÝ TRẠNG THÁI VÀ ĐÁP ÁN ---
+
+        function handleAnswer(value, text, score = 0) {
+            // 1. Thêm câu trả lời của người dùng vào giao diện
+            // Đã cập nhật để dùng pushMessage
+            pushMessage('user', text, 'response', false); 
+
+            // --- Logic Quiz (Tính điểm) ---
+            if (appState.startsWith('quiz')) {
+                quizScore += score;
+                currentQuizIndex++;
+                let quizData = appState.includes('buying') ? QUIZ_BUYING_DATA : QUIZ_EVENT_DATA;
+
+                if (currentQuizIndex < quizData.length) {
+                    renderQuizQuestion(quizData[currentQuizIndex], appState.includes('buying') ? 'buying' : 'event');
+                    return;
+                } else {
+                    appState = appState.replace('quiz_', 'result_');
+                    renderChatbox();
+                    return;
+                }
+            }
+
+            // --- Chuyển trạng thái ---
+            switch (appState) {
+                case 'intro':
+                    appState = (value === 'manage') ? 'branch1_q1' : 'branch2_q1';
+                    break;
+                case 'branch1_q1':
+                    appState = (value === 'simple') ? 'branch1_1_info' : 'branch1_2_info';
+                    break;
+                case 'branch1_email_q1':
+                    appState = (value === 'yes') ? 'branch1_email_q2' : 'ask_restart'; // Nếu "Không" -> hỏi restart
+                    break;
+                case 'branch1_email_q2':
+                    userSelection.style = text; // Lưu lại phong cách (Thân thiện/Nghiêm khắc)
+                    appState = 'branch1_email_input';
+                    break;
+                case 'branch2_q1':
+                    appState = (value === 'buying') ? 'branch2_1_q1' : 'branch2_2_q1';
+                    break;
+                case 'branch2_1_q1': // Chọn mode chi tiêu cho Buying Quiz
+                    quizMode = value; // 'tight', 'save', 'comfort'
+                    appState = 'quiz_buying';
+                    currentQuizIndex = 0;
+                    break;
+                case 'branch2_2_q1': // Chọn mode chi tiêu cho Event Quiz
+                    quizMode = value; // 'moderate', 'rich', 'strict'
+                    appState = 'quiz_event';
+                    currentQuizIndex = 0;
+                    break;
+                case 'ask_restart':
+                    if (value === 'yes') {
+                        resetChat();
+                        return;
+                    } else {
+                        appState = 'conclusion'; // User trả lời "Không" -> chuyển sang trạng thái cảm ơn
+                    }
+                    break;
+            }
+            renderChatbox();
+        }
+
+        function renderQuizQuestion(quizData, quizType) {
+            // Đã cập nhật để dùng pushMessage, đảm bảo lịch sử được vẽ lại đúng
+            pushMessage('cashcat', `(Câu ${currentQuizIndex + 1}/10) ${quizData.q}`, 'quiz_q');
+
+            const options = quizData.opts
+                .map(option => {
+                    let score = 0;
+                    let optionText = option.text;
+
+                    if (quizType === 'buying') {
+                        // Lấy điểm tương ứng với chế độ chi tiêu hiện tại (quizMode: tight/save/comfort)
+                        score = option.scores[quizMode];
+                    } else if (quizType === 'event') {
+                        // Event quiz dùng điểm chung, quizMode chỉ quyết định threshold cuối
+                        score = option.score;
+                    }
+                    
+                    // Bỏ qua các option không áp dụng cho chế độ hiện tại (score == null)
+                    if (score === null || score === undefined) return null;
+
+                    // Trả về text và giá trị, score được ẩn trong value để handleAnswer() lấy
+                    // Điểm số không hiển thị cho user
+                    return {
+                        text: optionText,
+                        value: JSON.stringify({ text: optionText, score: score })
+                    };
+                })
+                .filter(option => option !== null); // Loại bỏ options null (ví dụ: Q3 của Buying)
+
+            // Handler đặc biệt cho Quiz để truyền điểm
+            const quizHandler = (jsonValue, text) => {
+                const data = JSON.parse(jsonValue);
+                handleAnswer(text, data.text, data.score);
+            };
+
+            renderOptions(options, quizHandler);
+        }
+
+        // --- HÀM RENDER CHÍNH ---
+        function renderChatbox() {
+            const inputArea = document.getElementById('inputArea');
+            inputArea.innerHTML = '';
+            
+            // Các case state:
+            switch (appState) {
+                case 'intro':
+                    // Đã cập nhật để dùng pushMessage
+                    pushMessage('cashcat', "Mèo Thủ Quỹ từng là “kế toán trưởng” của Vương Quốc Mèo, nổi tiếng với khả năng phát hiện thất thoát ngân sách chỉ trong một giờ. Sau khi thấy sinh viên loay hoay vì hết tiền giữa tháng, nó quyết định “nghỉ công tác” để trở thành mentor tài chính cho con người. Nó luôn nói: “Tiền không tự sinh ra, nhưng tư duy đúng có thể giúp nó lớn lên meow~.”", 'intro_title', false);
+                    setTimeout(() => {
+                        pushMessage('cashcat', "Chào bạn, mình là Cashcat, một chú mèo thủ quỹ được triệu hồi đến để giúp đỡ các bạn đang gặp khó khăn trong vấn đề tài chính.", 'intro_message', false);
+                        setTimeout(() => {
+                            pushMessage('cashcat', "Bạn muốn mình giúp đỡ điều gì?", 'question', false);
+                            renderOptions([
+                                { text: "Cung cấp prompt giúp mình giải quyết vấn đề về cách quản lí tiền bạc của mình.", value: 'manage' },
+                                { text: "Giúp mình đưa ra quyết định chi tiêu", value: 'decision' }
+                            ], handleAnswer);
+                        }, 500);
+                    }, 500);
+                    break;
+
+                // --- BRANCH 1: QUẢN LÝ TIỀN BẠC ---
+                case 'branch1_q1':
+                    pushMessage('cashcat', "Bạn thường quản lý chi tiêu theo cách nào?", 'question', false);
+                    renderOptions([
+                        { text: "Tôi ưu tiên sự đơn giản, thường chỉ muốn biết tổng số tiền mình có thể sử dụng mà không phải ghi chép nhiều.", value: 'simple' },
+                        { text: "Tôi muốn nắm rõ chi tiêu hàng tháng, thích theo dõi chi tiết để tối ưu từng khoản.", value: 'detail' }
+                    ], handleAnswer);
+                    break;
+
+                case 'branch1_1_info': // Simple Methods
+                    pushMessage('cashcat', `
+                        Cashcat nghĩ rằng bạn phù hợp với hai phương pháp quản lý chi tiêu sau:
+                        <br><br>
+                        <strong class="text-lg cashcat-dark">👉 Phương pháp 80/20</strong>
+                        <br>
+                        80% cho toàn bộ chi tiêu thiết yếu + chi tiêu linh hoạt
+                        <br>
+                        20% cho tiết kiệm hoặc trả nợ
+                        <br>
+                        <em class="text-xs">Đây là cách quản lý tối giản, dễ áp dụng và phù hợp với người thích sự đơn giản.</em>
+                        <br><br>
+                        <strong class="text-base cashcat-dark font-bold">👉 Prompt bạn có thể dùng với Chat GPT/Gemini/DeepSeek:</strong>
+                        <br>
+                        Tôi đang có số tiền: [SỐ TIỀN], sử dụng trong [SỐ THÁNG] tháng.
+                        <br>
+                        Hãy giúp tôi chia khoản tiền này theo quy tắc 80/20. Hãy cho tôi biết số tiền cụ thể cho 80% (chi tiêu) và 20% (tiết kiệm/trả nợ), và đưa ra lời khuyên tối ưu nếu khoản tiền tôi có chưa phù hợp với mô hình này.
+                        <br><br>
+                        <strong class="text-lg cashcat-dark">👉 Phương pháp 70/20/10</strong>
+                        <br>
+                        70% chi tiêu hằng tháng
+                        <br>
+                        20% tiết kiệm/đầu tư
+                        <br>
+                        10% phát triển bản thân
+                        <br>
+                        <em class="text-xs">Cách làm này vừa đơn giản vừa giúp bạn có sự cân bằng giữa chi tiêu – tiết kiệm – phát triển cá nhân.</em>
+                        <br><br>
+                        <strong class="text-base cashcat-dark font-bold">👉 Prompt bạn có thể dùng với Chat GPT/Gemini/DeepSeek:</strong>
+                        <br>
+                        Tôi đang có số tiền: [SỐ TIỀN], sử dụng trong [SỐ THÁNG] tháng.
+                        <br>
+                        Hãy giúp tôi chia khoản tiền này theo quy tắc 70/20/10 với 70% chi tiêu, 20% tiết kiệm/đầu tư, và 10% phát triển bản thân. Hãy tính số tiền cụ thể cho từng mục và gợi ý điều chỉnh nếu cần.
+                    `, 'info', false);
+                    appState = 'branch1_email_q1';
+                    setTimeout(renderChatbox, 500);
+                    break;
+
+                case 'branch1_2_info': // Detailed Methods
+                    pushMessage('cashcat', `
+                        Cashcat nghĩ rằng bạn phù hợp với các phương pháp quản lý chi tiêu chi tiết sau:
+                        <br><br>
+                        <strong class="text-lg cashcat-dark">👉 Phương pháp 50/30/20 (Nâng Cao)</strong>
+                        <br>
+                        50% nhu cầu thiết yếu (nhà ở, ăn uống, điện nước…)
+                        <br>
+                        30% mong muốn (mua sắm, giải trí…)
+                        <br>
+                        20% tiết kiệm/đầu tư
+                        <br>
+                        <em class="text-xs">Phiên bản nâng cao còn chia nhỏ từng mục để kiểm soát chi tiết hơn, rất hợp với người thích theo dõi sát sao chi tiêu.</em>
+                        <br><br>
+                        <strong class="text-base cashcat-dark font-bold">👉 Prompt bạn có thể dùng với Chat GPT/Gemini/DeepSeek:</strong>
+                        <br>
+                        Tôi đang có số tiền: [SỐ TIỀN], sử dụng trong [SỐ THÁNG] tháng.
+                        <br>
+                        Hãy giúp tôi chia khoản tiền này theo mô hình 50/30/20 nâng cao. Ngoài 3 nhóm chính (thiết yếu – mong muốn – tiết kiệm), hãy chia nhỏ từng nhóm thành các danh mục chi tiêu cụ thể và gợi ý cách theo dõi để tối ưu chi tiêu hằng tháng.
+                        <br><br>
+                        <strong class="text-lg cashcat-dark">👉 Phương pháp 6 Chiếc Lọ (JARS System)</strong>
+                        <br>
+                        Mô hình 6 hũ chia thu nhập thành:
+                        <ul class="list-disc pl-5">
+                            <li>NEC – Chi tiêu thiết yếu</li>
+                            <li>FFA – Đầu tư, tăng thu nhập</li>
+                            <li>LTSS – Mục tiêu dài hạn</li>
+                            <li>EDU – Học tập, nâng cao bản thân</li>
+                            <li>PLAY – Giải trí</li>
+                            <li>GIVE – Từ thiện</li>
+                        </ul>
+                        <em class="text-xs">Phương pháp này cực chi tiết và giúp người dùng có sự cân bằng giữa chi tiêu – tiết kiệm – phát triển cá nhân.</em>
+                        <br><br>
+                        <strong class="text-base cashcat-dark font-bold">👉 Prompt bạn có thể dùng với ChatGPT/Gemini/DeepSeek:</strong>
+                        <br>
+                        Tôi đang có số tiền: [SỐ TIỀN], sử dụng trong [SỐ THÁNG] tháng.
+                        <br>
+                        Hãy giúp tôi phân bổ khoản tiền này theo phương pháp 6 chiếc lọ (NEC, FFA, LTSS, EDU, PLAY, GIVE). Hãy ghi rõ số tiền cụ thể cho từng lọ và giải thích vai trò của mỗi lọ để tôi dễ theo dõi.
+                        <br><br>
+                        <strong class="text-lg cashcat-dark">👉 Phương pháp Zero-Based Budgeting (ZBB)</strong>
+                        <br>
+                        Zero-Based Budgeting yêu cầu phân bổ từng đồng đến đúng một mục đích. Rất phù hợp cho người muốn kiểm soát chính xác và tối ưu hóa chi tiêu.
+                        <br><br>
+                        <strong class="text-base cashcat-dark font-bold">👉 Prompt bạn có thể dùng với ChatGPT/Gemini/DeepSeek:</strong>
+                        <br>
+                        Tôi đang có số tiền: [SỐ TIỀN], sử dụng trong [SỐ THÁNG] tháng.
+                        <br>
+                        Hãy áp dụng phương pháp Zero-Based Budgeting để phân bổ toàn bộ khoản tiền này. Hãy chia nhỏ từng loại chi tiêu và đảm bảo tổng chi tiêu bằng đúng số tiền tôi có. Đưa ra đề xuất tối ưu nếu có danh mục vượt mức cần thiết.
+                    `, 'info', false);
+                    appState = 'branch1_email_q1';
+                    setTimeout(renderChatbox, 500);
+                    break;
+
+                case 'branch1_email_q1':
+                    pushMessage('cashcat', "Bạn có muốn Cashcat nhắc bạn mỗi ngày về việc ghi chép chi tiêu không?", 'question', false);
+                    renderOptions([
+                        { text: "Có", value: 'yes' },
+                        { text: "Không", value: 'no' }
+                    ], handleAnswer);
+                    break;
+
+                case 'branch1_email_q2':
+                    pushMessage('cashcat', "Bạn muốn mình đóng vai trò nào?", 'question', false);
+                    renderOptions([
+                        { text: "Thân thiện, gần gũi.", value: 'friendly' },
+                        { text: "Nghiêm khắc.", value: 'strict' }
+                    ], handleAnswer);
+                    break;
+
+                case 'branch1_email_input':
+                    // Câu hỏi đã được thêm trong hàm renderEmailInput
+                    renderEmailInput();
+                    break;
+
+                // --- BRANCH 2: QUYẾT ĐỊNH CHI TIÊU ---
+                case 'branch2_q1':
+                    pushMessage('cashcat', "Bạn đang phân vân trong vấn đề gì?", 'question', false);
+                    renderOptions([
+                        { text: "Mình phân vân trong việc có nên mua gì đó không.", value: 'buying' },
+                        { text: "Mình phân vân trong việc có nên tham gia sự kiện đó không.", value: 'event' }
+                    ], handleAnswer);
+                    break;
+
+                // Branch 2.1 - Buying Quiz Setup
+                case 'branch2_1_q1':
+                    pushMessage('cashcat', "Hiện tại nhu cầu chi tiêu của bạn là gì?", 'question', false);
+                    renderOptions([
+                        { text: "Tôi cần siết chặt chi tiêu.", value: 'tight' },
+                        { text: "Tôi muốn tiết kiệm hơn.", value: 'save' },
+                        { text: "Tôi dư dả nhưng muốn quản lý chi tiêu hợp lý hơn.", value: 'comfort' }
+                    ], handleAnswer);
+                    break;
+
+                // Branch 2.2 - Event Quiz Setup
+                case 'branch2_2_q1':
+                    pushMessage('cashcat', "Tình trạng kinh tế hiện tại của bạn như thế nào?", 'question', false);
+                    renderOptions([
+                        { text: "Mình không cần quá tiết kiệm.", value: 'moderate' },
+                        { text: "Mình đang sống dư dả, không áp lực tiền bạc.", value: 'rich' },
+                        { text: "Mình thật sự cần tiết kiệm.", value: 'strict' }
+                    ], handleAnswer);
+                    break;
+
+                // --- QUIZ EXECUTION ---
+                case 'quiz_buying':
+                    renderQuizQuestion(QUIZ_BUYING_DATA[currentQuizIndex], 'buying');
+                    break;
+                case 'quiz_event':
+                    renderQuizQuestion(QUIZ_EVENT_DATA[currentQuizIndex], 'event');
+                    break;
+
+                // --- QUIZ RESULTS (ĐÃ ẨN ĐIỂM NỘI BỘ) ---
+                case 'result_buying':
+                    let buyingResultText = "";
+                    const scoreBuying = quizScore;
+                    
+                    if (quizMode === 'tight') { // Tôi cần siết chặt chi tiêu.
+                        if (scoreBuying >= 10) {
+                            buyingResultText = "<strong>NÊN MUA</strong><br>Đây là một khoản chi cần thiết và hợp lý. Bạn có thể mua nó.";
+                        } else if (scoreBuying >= 1) { // 1 <= score <= 9
+                            buyingResultText = "<strong>CÂN NHẮC THÊM</strong><br>Hãy cân nhắc thật kỹ. Tốt nhất bạn nên đợi 24-48 giờ trước khi quyết định.";
+                        } else { // score <= 0
+                            buyingResultText = "<strong>KHÔNG NÊN MUA</strong><br>Không nên mua lúc này. Món đồ này có thể ảnh hưởng đến kế hoạch tài chính của bạn.";
+                        }
+                    } else if (quizMode === 'save') { // Tôi muốn tiết kiệm hơn.
+                        if (scoreBuying >= 10) {
+                            buyingResultText = "<strong>NÊN MUA</strong><br>Bạn đã cân nhắc khá kỹ và món đồ này mang lợi ích rõ ràng, vậy thì chờ gì nữa ní! Bạn hoàn toàn có thể mua nè!";
+                        } else if (scoreBuying >= 5) { // 5 <= score <= 9
+                            buyingResultText = "<strong>CÂN NHẮC THÊM</strong><br>Hãy cân nhắc thật kỹ trước khi mua món đồ này, bạn có thể đợi thêm một thời gian rồi hẵng quyết định nhé!";
+                        } else { // score < 5
+                            buyingResultText = "<strong>KHÔNG NÊN MUA</strong><br>Dựa trên câu trả lời của bạn, món này chưa thực sự cần thiết và có thể khiến bạn mất kiểm soát chi tiêu. Bạn không nên mua lúc này,... hết cứu đó!";
+                        }
+                    } else if (quizMode === 'comfort') { // Tôi dư dả nhưng muốn quản lý chi tiêu hợp lý hơn.
+                        if (scoreBuying >= 12) {
+                            buyingResultText = "<strong>NÊN MUA</strong><br>Bạn hoàn toàn có thể mua. Quyết định này hợp lý với mục tiêu quản lý chi tiêu của bạn.";
+                        } else if (scoreBuying >= 4) { // 4 <= score <= 11
+                            buyingResultText = "<strong>CÂN NHẮC THÊM</strong><br>Có thể mua, nhưng bạn nên cân nhắc hoặc đợi 24 giờ để xem có còn muốn nữa không.";
+                        } else { // score <= 3
+                            buyingResultText = "<strong>KHÔNG NÊN MUA</strong><br>Không nên mua. Món này không mang lại lợi ích tương xứng và dễ dẫn đến chi tiêu không hiệu quả.";
+                        }
+                    }
+                    showResultModal("KẾT LUẬN CỦA CASHCAT", buyingResultText);
+                    break;
+
+                case 'result_event':
+                    let eventResultText = "";
+                    const scoreEvent = quizScore;
+                    
+                    if (quizMode === 'moderate') { // Mình không cần quá tiết kiệm (Threshold: 8)
+                        if (scoreEvent >= 8) {
+                            eventResultText = "<strong>NÊN THAM GIA</strong><br>Đây là hoạt động mang lại giá trị đủ lớn so với chi phí và thời gian.";
+                        } else { 
+                            eventResultText = "<strong>KHÔNG NÊN THAM GIA</strong><br>Chi phí (tiền/thời gian/năng lượng) vượt quá lợi ích.";
+                        }
+                    } else if (quizMode === 'rich') { // Mình đang sống dư dả (Threshold: 4)
+                        if (scoreEvent >= 4) {
+                            eventResultText = "<strong>NÊN THAM GIA</strong><br>Đây là hoạt động mang lại giá trị đủ lớn so với chi phí và thời gian.";
+                        } else { 
+                            eventResultText = "<strong>KHÔNG NÊN THAM GIA</strong><br>Chi phí (tiền/thời gian/năng lượng) vượt quá lợi ích.";
+                        }
+                    } else if (quizMode === 'strict') { // Mình thật sự cần tiết kiệm (Threshold: 12)
+                        if (scoreEvent >= 12) {
+                            eventResultText = "<strong>NÊN THAM GIA</strong><br>Đây là hoạt động mang lại giá trị đủ lớn so với chi phí và thời gian.";
+                        } else { 
+                            eventResultText = "<strong>KHÔNG NÊN THAM GIA</strong><br>Chi phí (tiền/thời gian/năng lượng) vượt quá lợi ích.";
+                        }
+                    }
+                    showResultModal("KẾT LUẬN CỦA CASHCAT", eventResultText);
+                    break;
+
+                // --- HỎI RESTART (Chỉ còn câu hỏi) ---
+                case 'ask_restart':
+                    pushMessage('cashcat', "Bạn có muốn hỏi Cashcat thêm gì không, meow?", 'question', true);
+                    renderOptions([
+                        { text: "Có", value: 'yes' },
+                        { text: "Không", value: 'no' }
+                    ], handleAnswer);
+                    break;
+
+                // --- KẾT THÚC CUỘC TRÒ CHUYỆN (Chỉ còn lời cảm ơn) ---
+                case 'conclusion':
+                    // Lời cảm ơn được push khi user trả lời "Không" ở 'ask_restart'
+                    pushMessage('cashcat', "Cashcat cảm ơn bạn rất nhiều, hi vọng gợi ý của mình đã giúp đỡ bạn phần nào trong việc quản lý chi tiêu nhé, meow~", 'conclusion', false);
+                    // Xóa khu vực input
+                    inputArea.innerHTML = '';
+                    break;
+
+                default:
+                    pushMessage('cashcat', "Đã xảy ra lỗi trong luồng trò chuyện. Vui lòng tải lại trang để bắt đầu lại. meow~", 'conclusion');
+                    break;
+            }
+        }
+
+        // Khởi tạo ứng dụng
+        document.addEventListener('DOMContentLoaded', () => {
+            renderChatbox();
+        });
+    </script>
+</body>
+</html>
